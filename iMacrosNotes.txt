@@ -1,0 +1,34 @@
+iMacros script to set attribution: (the $1 to be replaced with page names via regex search and replace)
+URL GOTO=https://courses.candelalearning.com/BOOKNAME/wp-admin/index.php
+TAG POS=1 TYPE=A ATTR=TXT:$1
+TAG POS=1 TYPE=SELECT FORM=ID:post ATTR=NAME:citation-type[0] CONTENT=%cc
+TAG POS=1 TYPE=INPUT:TEXT FORM=ID:post ATTR=NAME:citation-description[0] CONTENT=Introduction<SP>to<SP>Business
+TAG POS=1 TYPE=INPUT:TEXT FORM=ID:post ATTR=NAME:citation-author[0] CONTENT=Anonymous
+TAG POS=1 TYPE=INPUT:TEXT FORM=ID:post ATTR=NAME:citation-organization[0] CONTENT=Anonymous
+TAG POS=1 TYPE=INPUT:TEXT FORM=ID:post ATTR=NAME:citation-url[0] CONTENT=http://2012books.lardbucket.org/books/an-introduction-to-business-v2.0/
+TAG POS=1 TYPE=SELECT FORM=ID:post ATTR=NAME:citation-license[0] CONTENT=%cc-by-nc-sa
+TAG POS=1 TYPE=SELECT FORM=ID:post ATTR=NAME:candela-license CONTENT=%cc-by-nc-sa
+TAG POS=1 TYPE=INPUT:SUBMIT FORM=ID:post ATTR=ID:publish
+
+get page list, in iMacros format (via Console, on Dashboard page):
+urls = [];jQuery("#pb_dashboard_widget_book div.inside ul li > a").each(function(i,el) {
+  urls.push(jQuery(el).text().replace(':','*').replace(/\s/g,'<SP>'));}); console.log(urls.join("\n"));
+  
+uploading quizzes to OEA:  (the $1 to be replaced with file names)
+SET !EXTRACT_TEST_POPUP NO
+URL GOTO=https://oea.herokuapp.com/assessments/new
+TAG POS=1 TYPE=INPUT:FILE FORM=ACTION:/assessments ATTR=ID:assessment_xml_file CONTENT=D:\\content-util\\soc\\soc\\$1
+TAG POS=1 TYPE=INPUT:SUBMIT FORM=ACTION:/assessments ATTR=NAME:commit
+TAG POS=1 TYPE=A ATTR=TXT:</>
+TAG POS=1 TYPE=TEXTAREA ATTR=NAME:embed_text_confidence_levels EXTRACT=TXT
+
+SAVEAS TYPE=EXTRACT FOLDER=D:\ FILE=extract.csv
+
+Automatic OEA adding:
+Excel column1:  iMacro'ed link names
+Excel column2:  iMacro'ed iframe embeds
+=CONCATENATE("\nURL GOTO=https://courses.candelalearning.com/BOOKNAME/wp-admin/index.php\nTAG POS=1 TYPE=A ATTR=TXT:",A1,"\nSET !EXTRACT NULL\nTAG POS=1 TYPE=TEXTAREA ATTR=ID:content EXTRACT=TXT\nTAG POS=1 TYPE=TEXTAREA FORM=ID:post ATTR=ID:content CONTENT={{!EXTRACT}}",B1,"\nTAG POS=1 TYPE=INPUT:SUBMIT FORM=ID:post ATTR=ID:publish")
+then replace \n with newlines
+SET !EXTRACT_TEST_POPUP NO
+make sure we're editing text, not visual
+  
