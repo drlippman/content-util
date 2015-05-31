@@ -6,10 +6,11 @@ require("../validate.php");
 require("phpQuery-onefile.php");
 
 error_reporting(E_ALL);
-$cid = 1666;
-$folder = "begchem";
+$cid = 4146;
+$folder = "amgovtpol";
 $startchp = 5;
 $endchp = 21;
+//$webroot = 'http://www.savingstudentsmoney.org/FWK/econ/';
 
 
 $webroot = 'https://textimgs.s3.amazonaws.com/'.$folder.'/';

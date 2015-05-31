@@ -25,3 +25,14 @@ Only works for multiple choice questions.
 lbtoimathas.php
 ---------------
 Takes a download from Lardbucket's book archive and imports it into IMathAS
+
+OSziptoMOM.php
+---------------
+Reads an OpenStax/Connexions zip download and imports it into IMathAS.
+This works better than the epub-based approach.
+
+CK12toMOM.php
+---------------
+Reads a CK12 book into IMathAS.  Requires digging in to find the initial
+revision ID for the book.
+
