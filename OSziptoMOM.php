@@ -8,23 +8,29 @@
 @set_time_limit(0);
 ini_set("max_input_time", "6000");
 ini_set("max_execution_time", "6000");
-require("../validate.php");
+require("../config.php");
 require("phpQuery-onefile.php");
+require("unicodetotex.php");
 
 error_reporting(E_ALL);
 
-$cid = 4130;
+$cid = 4184;
 //make sure course has one folder in it
-$dir = 'osanp';
+$dir = 'OSastro';
 
-$meta['book'] = 'OpenStax Anatomy and Physiology';
-$meta['org'] = 'OpenStax College';
+$meta['book'] = 'History Outline';
+$meta['author'] = 'Jack Maxfield';
+//$meta['org'] = 'OpenStax';
 $meta['license'] = 'CC-BY';
 $meta['licenseurl'] = 'http://creativecommons.org/licenses/by/4.0/';
-$bookname = 'OpenStax Anatomy and Physiology';
+$bookname = 'History Outline';
 
 //read in collection file to get module order
-phpQuery::newDocumentFileXML($dir.'/collection.xml');
+//phpQuery::newDocumentFileXML($dir.'/collection.xml');
+$c = file_get_contents($dir.'/collection.xml');
+$c = preg_replace('/<\w+:/','<',$c);
+$c = preg_replace('/<\/\w+:/','</',$c);
+phpQuery::newDocumentXML($c);
 
 //downsize image quality of jpgs
 function processImage($image, $width) {
@@ -52,106 +58,125 @@ function processImage($image, $width) {
 	}
 }
 
-$mods = pq("col|module");
+$mods = pq("module");
 $modlist = array();
 foreach ($mods as $mod) {
-	$modlist[] =  pq($mod)->attr("document");
+	$name = pq($mod)->parent()->siblings("title")->text();
+	if ($name=='') { $name = "none";}
+	if (isset($modlist[$name])) {
+		$modlist[$name][] = pq($mod)->attr("document");
+	} else {
+		$modlist[$name]= array(pq($mod)->attr("document"));
+	}
 }
 
-$query = "SELECT itemorder FROM imas_courses WHERE id='$cid'";
+$query = "SELECT itemorder,blockcnt FROM imas_courses WHERE id='$cid'";
 $result = mysql_query($query) or die("Query failed : $query " . mysql_error());
 list($items,$blockcnt) = mysql_fetch_row($result);
 $items = unserialize($items);
 
 //process each module
-foreach ($modlist as $mod) {
-	phpQuery::newDocumentFileHTML($dir.'/'.$mod.'/index.cnxml.html');
-	$pagetitle = trim(pq("title")->html());
-	//rewrite image urls
-	$imgs = pq("img");
-	foreach ($imgs as $img) {
-		$src = pq($img)->attr("src");
-		$width = pq($img)->attr("width");
-		$src = 'https://textimgs.s3.amazonaws.com/'.$dir.'/'.$mod.'/'.basename($src);
-		processImage($mod.'/'.basename($src), $width);
-		pq($img)->attr("src",$src);
-	}
-
-	//grab and process review questions
-	$revq = pq("section.review-questions");
-	if (count($revq)>0) {
-		$assessinfo = makeQTI($pagetitle, $revq);
-		pq($revq)->html('<h1>Review Questions</h1>'.$assessinfo);
-	} else {
-		$revq = pq("section.multiple-choice");
+foreach ($modlist as $chpname=>$mods) {
+	$chpfolder = array("name"=>$chpname, "id"=>$blockcnt, "startdate"=>0, "enddate"=>2000000000, "avail"=>2, "SH"=>"HO", "colors"=>"", "public"=>0, "fixedheight"=>0, "grouplimit"=>array());
+	$blockcnt++;
+	$chpfolder['items'] = array();
+	foreach ($mods as $mod) {
+	
+		$c = file_get_contents($dir.'/'.$mod.'/index.cnxml.html');
+		$c = str_replace(array('&#8220;','&#8221;'),'"', $c);
+		phpQuery::newDocumentHTML($c);
+		$pagetitle = trim(pq("title")->html());
+		//rewrite image urls
+		$imgs = pq("img");
+		foreach ($imgs as $img) {
+			$src = pq($img)->attr("src");
+			$width = pq($img)->attr("width");
+			$src = 'https://textimgs.s3.amazonaws.com/'.$dir.'/'.$mod.'/'.basename($src);
+			processImage($mod.'/'.basename($src), $width);
+			pq($img)->attr("src",$src);
+		}
+	
+		//grab and process review questions
+		/*
+		$revq = pq("section.review-questions");
 		if (count($revq)>0) {
 			$assessinfo = makeQTI($pagetitle, $revq);
 			pq($revq)->html('<h1>Review Questions</h1>'.$assessinfo);
-		} else { 
-			$revq = pq("section.section-quiz");
+		} else {
+			$revq = pq("section.multiple-choice");
 			if (count($revq)>0) {
 				$assessinfo = makeQTI($pagetitle, $revq);
-				pq($revq)->html('<h1>Section Quiz</h1>'.$assessinfo);
-			}	
+				pq($revq)->html('<h1>Review Questions</h1>'.$assessinfo);
+			} else { 
+				$revq = pq("section.section-quiz");
+				if (count($revq)>0) {
+					$assessinfo = makeQTI($pagetitle, $revq);
+					pq($revq)->html('<h1>Section Quiz</h1>'.$assessinfo);
+				}	
+			}
 		}
-	}
-	
-	$txt = pq("body")->html();
-	
-	
-	echo "Processing $pagetitle.  Initial length ".strlen($txt);
-	if (strpos($txt,'<math')!==false) {
-		//** TO DO
-		//add stuff to 
-		//  -convert weird whitespace to simple whitespace
-		//  -change 2x-3 to 2x -3
-		//  -change < to &lt; inside math
-		//  -move end . and , outside latex tags
-		//convert mathml to latex
-		$txt = preg_replace('/<mspace\s+width="[\d\.]+em"\/>/','',$txt);
-		$txt = preg_replace('/<mspace\s+width="[\d\.]+em"><\/mspace>/','',$txt);
-
-		$url = 'http://54.191.55.159/mmltex/conv.php';
-		$data = array('html'=>$txt);
-		$options = array(
-		    'http' => array(
-			'header'  => "Content-type: application/x-www-form-urlencoded; charset=utf-8\r\n",
-			'method'  => 'POST',
-			'content' => http_build_query($data),
-		    ),
-		);
-		$context  = stream_context_create($options);
-		$txt = file_get_contents($url, false, $context);
-		$txt = preg_replace_callback('/\[latex\].*?\[\/latex\]/s', function($matches) {
-				$out = preg_replace('/\s+/u', ' ', $matches[0]);
-				$out = str_replace(array('∑','−','→','⇋','⇌','≤','≥','±','×','°','·'), array('\Sigma ','-','\rightarrow ','\leftrightharpoons ','\rightleftharpoons ','\leq ', '\geq ', '\pm ', '\times ', '^\circ ', '\cdot '), $out);
-				$out = str_replace(array('\text{Δ}','Δ','σ','’','\x27f6','λ','∞','Φ','θ','⟶'), array('\Delta ','\Delta ','\sigma ',"'",'\longrightarrow ','\lambda ','\infty ','\phi ', '\theta ','\longrightarrow '), $out);
-				$out = str_replace(array('־','‐','‑','‒','–','—','―','−'), '-', $out);
-				$out = preg_replace('/(\w)\-(\d)/', '$1 - $2', $out);
-				$out = str_replace('.[/latex]', '[/latex].', $out);
-				$out = str_replace(',[/latex]', '[/latex],', $out);
-				$out = str_replace(';[/latex]', '[/latex];', $out);
-				$out = str_replace('\text{;}[/latex]', '[/latex];', $out);
-				$out = str_replace('\text{,}[/latex]', '[/latex],', $out);
-				$out = str_replace('<', '&lt;', $out);
-				$out = str_replace('>', '&gt;', $out);
-				return $out;
-			}, $txt);
+		*/
+		$txt = pq("body")->html();
 		
+		
+		echo "Processing $pagetitle.  Initial length ".strlen($txt);
+		if (strpos($txt,'<math')!==false) {
+			//** TO DO
+			//add stuff to 
+			//  -convert weird whitespace to simple whitespace
+			//  -change 2x-3 to 2x -3
+			//  -change < to &lt; inside math
+			//  -move end . and , outside latex tags
+			//convert mathml to latex
+			$txt = preg_replace('/<mspace\s+width="[\d\.]+em"\/>/','',$txt);
+			$txt = preg_replace('/<mspace\s+width="[\d\.]+em"><\/mspace>/','',$txt);
+			$txt = preg_replace('/<annotation-xml.*?<\/annotation-xml>/','',$txt);
+			$txt = preg_replace('/<\/?semantics>/','',$txt);
+			$url = 'http://54.191.55.159/mmltex/conv.php';
+			$data = array('html'=>$txt);
+			$options = array(
+			    'http' => array(
+				'header'  => "Content-type: application/x-www-form-urlencoded; charset=utf-8\r\n",
+				'method'  => 'POST',
+				'content' => http_build_query($data),
+			    ),
+			);
+			$context  = stream_context_create($options);
+			$txt = file_get_contents($url, false, $context);
+			$txt = preg_replace_callback('/\[latex\].*?\[\/latex\]/s', function($matches) {
+					$out = preg_replace('/\s+/u', ' ', $matches[0]);
+					$out = str_replace(array('∑','−','→','⇋','⇌','≤','≥','±','×','°','·'), array('\Sigma ','-','\rightarrow ','\leftrightharpoons ','\rightleftharpoons ','\leq ', '\geq ', '\pm ', '\times ', '^\circ ', '\cdot '), $out);
+					$out = str_replace(array('\text{Δ}','Δ','σ','’','\x27f6','λ','∞','Φ','θ','⟶'), array('\Delta ','\Delta ','\sigma ',"'",'\longrightarrow ','\lambda ','\infty ','\phi ', '\theta ','\longrightarrow '), $out);
+					$out = str_replace(array('־','‐','‑','‒','–','—','―','−'), '-', $out);
+					$out = preg_replace('/(\w)\-(\d)/', '$1 - $2', $out);
+					$out = unicodetotex($out);
+					$out = preg_replace('/mathrm{(sin|cos|tan|sec|csc|cot)}/','$1 ',$out);
+					$out = str_replace('.[/latex]', '[/latex].', $out);
+					$out = str_replace(',[/latex]', '[/latex],', $out);
+					$out = str_replace(';[/latex]', '[/latex];', $out);
+					$out = str_replace('\text{;}[/latex]', '[/latex];', $out);
+					$out = str_replace('\text{,}[/latex]', '[/latex],', $out);
+					$out = str_replace('<', '&lt;', $out);
+					$out = str_replace('>', '&gt;', $out);
+					return $out;
+				}, $txt);
+			
+		}
+		echo ". Post conv ".strlen($txt).'<br/>';
+	
+		$txt = addslashes($txt);
+		
+		$pagetitle = addslashes($pagetitle);
+		$query = "INSERT INTO imas_linkedtext (courseid,title,summary,text,avail) VALUES ('$cid','$pagetitle','','$txt',2)";
+		mysql_query($query) or die("Query failed : $query " . mysql_error());
+		$linkid= mysql_insert_id();
+		$query = "INSERT INTO imas_items (courseid,itemtype,typeid) VALUES ('$cid','LinkedText',$linkid)";
+		mysql_query($query) or die("Query failed : $query " . mysql_error());
+		$itemid= mysql_insert_id();
+		
+		$chpfolder['items'][] = $itemid;
 	}
-	echo ". Post conv ".strlen($txt).'<br/>';
-
-	$txt = addslashes($txt);
-	
-	$pagetitle = addslashes($pagetitle);
-	$query = "INSERT INTO imas_linkedtext (courseid,title,summary,text,avail) VALUES ('$cid','$pagetitle','','$txt',2)";
-	mysql_query($query) or die("Query failed : $query " . mysql_error());
-	$linkid= mysql_insert_id();
-	$query = "INSERT INTO imas_items (courseid,itemtype,typeid) VALUES ('$cid','LinkedText',$linkid)";
-	mysql_query($query) or die("Query failed : $query " . mysql_error());
-	$itemid= mysql_insert_id();
-	
-	$items[0]['items'][] = $itemid;
+	$items[] = $chpfolder;
 	
 }
 
