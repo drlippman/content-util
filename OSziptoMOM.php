@@ -6,24 +6,24 @@
 <body>
 <?php
 @set_time_limit(0);
-ini_set("max_input_time", "6000");
-ini_set("max_execution_time", "6000");
-require("../config.php");
+ini_set("max_input_time", "9000");
+ini_set("max_execution_time", "9000");
+require("../init_without_validate.php");
 require("phpQuery-onefile.php");
 require("unicodetotex.php");
 
 error_reporting(E_ALL);
 
-$cid = 4184;
+$cid = 13342;
 //make sure course has one folder in it
-$dir = 'OSastro';
+$dir = 'OSbioconc';
 
-$meta['book'] = 'History Outline';
-$meta['author'] = 'Jack Maxfield';
-//$meta['org'] = 'OpenStax';
+$meta['book'] = 'Biology';
+$meta['author'] = 'OpenStax';
+$meta['org'] = 'OpenStax';
 $meta['license'] = 'CC-BY';
 $meta['licenseurl'] = 'http://creativecommons.org/licenses/by/4.0/';
-$bookname = 'History Outline';
+$bookname = 'OpenStax Biology';
 
 //read in collection file to get module order
 //phpQuery::newDocumentFileXML($dir.'/collection.xml');
@@ -35,18 +35,72 @@ phpQuery::newDocumentXML($c);
 //downsize image quality of jpgs
 function processImage($image, $width) {
 	global $dir;
-	if (strpos($image,'.jpg')===false) {
+	if (strpos($image,'.jpg')!==false) {
+		$im = imagecreatefromjpeg($dir.'/'.$image);
+		if (trim($width)==='' || $width===0) {	
+			imagejpeg($im, $dir.'/'.$image, 90);
+		} else {
+			$w = imagesx($im);
+			$h = imagesy($im);
+			
+			if ($w<=2*$width) {
+			    imagejpeg($im, $dir.'/'.$image, 90);
+			    return;
+			}
+			$tw = 2*$width;
+			$th = $h/$w*$tw;
+			
+			$imT = imagecreatetruecolor( $tw, $th );
+			imagecopyresampled( $imT, $im, 0, 0, 0, 0, $tw, $th, $w, $h ); // resize to width
+			imagejpeg($imT, $dir.'/'.$image, 90);
+		}
+	} else if (strpos($image,'.png')!==false) {
+		$im = imagecreatefrompng($dir.'/'.$image);
+		if (trim($width)==='' || $width===0) {	
+			imagepng($im, $dir.'/'.$image, 9);
+		} else {
+			$w = imagesx($im);
+			$h = imagesy($im);
+			
+			if ($w<=2*$width) {
+			    imagepng($im, $dir.'/'.$image, 9);
+			    return;
+			}
+			$tw = 2*$width;
+			$th = $h/$w*$tw;
+			
+			$imT = imagecreatetruecolor( $tw, $th );
+			imagecopyresampled( $imT, $im, 0, 0, 0, 0, $tw, $th, $w, $h ); // resize to width
+			imagepng($imT, $dir.'/'.$image, 9);
+		}
+	} else {
 		return;
 	}
+}
+
+//this one is for converting jpg to png
+function processImagePng($image, $width) {
+	global $dir;
+	
+	$out = $dir.'/imgs/'.str_replace('.jpg','.png',basename($image));
+	
+	
+	if (strpos($image,'.jpg')===false) {
+		copy($dir.'/'.$image, $out);
+		return;
+	} 
+		
 	$im = imagecreatefromjpeg($dir.'/'.$image);
+	
+	
 	if (trim($width)==='' || $width===0) {	
-		imagejpeg($im, $dir.'/'.$image, 90);
+		imagepng($im, $out, 9);
 	} else {
 		$w = imagesx($im);
 		$h = imagesy($im);
 		
 		if ($w<=2*$width) {
-		    imagejpeg($im, $dir.'/'.$image, 90);
+		    imagepng($im, $out, 9);
 		    return;
 		}
 		$tw = 2*$width;
@@ -54,7 +108,7 @@ function processImage($image, $width) {
 		
 		$imT = imagecreatetruecolor( $tw, $th );
 		imagecopyresampled( $imT, $im, 0, 0, 0, 0, $tw, $th, $w, $h ); // resize to width
-		imagejpeg($imT, $dir.'/'.$image, 90);
+		imagepng($imT, $out, 9);
 	}
 }
 
@@ -70,9 +124,11 @@ foreach ($mods as $mod) {
 	}
 }
 
-$query = "SELECT itemorder,blockcnt FROM imas_courses WHERE id='$cid'";
-$result = mysql_query($query) or die("Query failed : $query " . mysql_error());
-list($items,$blockcnt) = mysql_fetch_row($result);
+//$query = "SELECT itemorder,blockcnt FROM imas_courses WHERE id='$cid'";
+//$result = mysql_query($query) or die("Query failed : $query " . mysql_error());
+$stm = $DBH->prepare("SELECT itemorder,blockcnt FROM imas_courses WHERE id=?");
+$stm->execute(array($cid));
+list($items,$blockcnt) = $stm->fetch(PDO::FETCH_NUM); //mysql_fetch_row($result);
 $items = unserialize($items);
 
 //process each module
@@ -86,6 +142,11 @@ foreach ($modlist as $chpname=>$mods) {
 		$c = str_replace(array('&#8220;','&#8221;'),'"', $c);
 		phpQuery::newDocumentHTML($c);
 		$pagetitle = trim(pq("title")->html());
+		
+		pq('div[data-type=document-title]')->remove();
+		pq('div[data-type=abstract]')->addClass("textbox")->addClass("learning-objectives")->prepend("<h3>Learning Objectives</h3>");
+		pq('div.exercise')->addClass("textbox");
+		
 		//rewrite image urls
 		$imgs = pq("img");
 		foreach ($imgs as $img) {
@@ -94,28 +155,42 @@ foreach ($modlist as $chpname=>$mods) {
 			$src = 'https://textimgs.s3.amazonaws.com/'.$dir.'/'.$mod.'/'.basename($src);
 			processImage($mod.'/'.basename($src), $width);
 			pq($img)->attr("src",$src);
+			
+			//the following was handy in one of the books where .jpg's were 
+			//much bigger than .png would be because of the content type.
+			//processImagePng($mod.'/'.basename($src), $width);
+			//$src = 'https://textimgs.s3.amazonaws.com/'.$dir.'/'.str_replace('.jpg','.png',basename($src));
+			//pq($img)->attr("src",$src)->attr("data-media-type","image/png");
 		}
 	
+		//strip internal links
+		$as = pq("a");
+		foreach ($as as $a) {
+			if (substr(pq($a)->attr("href"),0,4)!='http' && substr(pq($a)->attr("href"),0,1)!='#') {
+				pq($a)->replaceWith(pq($a)->contents());		
+			}
+		}
+		
 		//grab and process review questions
-		/*
+/*	
 		$revq = pq("section.review-questions");
 		if (count($revq)>0) {
 			$assessinfo = makeQTI($pagetitle, $revq);
-			pq($revq)->html('<h1>Review Questions</h1>'.$assessinfo);
+			//pq($revq)->html('<h1>Review Questions</h1>'.$assessinfo);
 		} else {
 			$revq = pq("section.multiple-choice");
 			if (count($revq)>0) {
 				$assessinfo = makeQTI($pagetitle, $revq);
-				pq($revq)->html('<h1>Review Questions</h1>'.$assessinfo);
+				//pq($revq)->html('<h1>Review Questions</h1>'.$assessinfo);
 			} else { 
 				$revq = pq("section.section-quiz");
 				if (count($revq)>0) {
 					$assessinfo = makeQTI($pagetitle, $revq);
-					pq($revq)->html('<h1>Section Quiz</h1>'.$assessinfo);
+					//pq($revq)->html('<h1>Section Quiz</h1>'.$assessinfo);
 				}	
 			}
 		}
-		*/
+*/		
 		$txt = pq("body")->html();
 		
 		
@@ -125,7 +200,7 @@ foreach ($modlist as $chpname=>$mods) {
 			//add stuff to 
 			//  -convert weird whitespace to simple whitespace
 			//  -change 2x-3 to 2x -3
-			//  -change < to &lt; inside math
+			//  -change < to &lt; inside mathex
 			//  -move end . and , outside latex tags
 			//convert mathml to latex
 			$txt = preg_replace('/<mspace\s+width="[\d\.]+em"\/>/','',$txt);
@@ -145,6 +220,8 @@ foreach ($modlist as $chpname=>$mods) {
 			$txt = file_get_contents($url, false, $context);
 			$txt = preg_replace_callback('/\[latex\].*?\[\/latex\]/s', function($matches) {
 					$out = preg_replace('/\s+/u', ' ', $matches[0]);
+					$out = str_replace('[latex]$','[latex]',$out);
+					$out = str_replace('$[/latex]','[/latex]',$out);
 					$out = str_replace(array('∑','−','→','⇋','⇌','≤','≥','±','×','°','·'), array('\Sigma ','-','\rightarrow ','\leftrightharpoons ','\rightleftharpoons ','\leq ', '\geq ', '\pm ', '\times ', '^\circ ', '\cdot '), $out);
 					$out = str_replace(array('\text{Δ}','Δ','σ','’','\x27f6','λ','∞','Φ','θ','⟶'), array('\Delta ','\Delta ','\sigma ',"'",'\longrightarrow ','\lambda ','\infty ','\phi ', '\theta ','\longrightarrow '), $out);
 					$out = str_replace(array('־','‐','‑','‒','–','—','―','−'), '-', $out);
@@ -163,16 +240,23 @@ foreach ($modlist as $chpname=>$mods) {
 			
 		}
 		echo ". Post conv ".strlen($txt).'<br/>';
-	
-		$txt = addslashes($txt);
+
+		//$txt = addslashes($txt);
 		
-		$pagetitle = addslashes($pagetitle);
-		$query = "INSERT INTO imas_linkedtext (courseid,title,summary,text,avail) VALUES ('$cid','$pagetitle','','$txt',2)";
-		mysql_query($query) or die("Query failed : $query " . mysql_error());
-		$linkid= mysql_insert_id();
-		$query = "INSERT INTO imas_items (courseid,itemtype,typeid) VALUES ('$cid','LinkedText',$linkid)";
-		mysql_query($query) or die("Query failed : $query " . mysql_error());
-		$itemid= mysql_insert_id();
+		//$pagetitle = addslashes($pagetitle);
+		//$query = "INSERT INTO imas_linkedtext (courseid,title,summary,text,avail) VALUES ('$cid','$pagetitle','','$txt',2)";
+		//mysql_query($query) or die("Query failed : $query " . mysql_error());
+		//$linkid= mysql_insert_id();
+		$stm = $DBH->prepare("INSERT INTO imas_linkedtext (courseid,title,summary,text,avail) VALUES (?,?,'',?,2)");
+		$stm->execute(array($cid,$pagetitle,$txt));
+		$linkid = $DBH->lastInsertId();
+		
+		//$query = "INSERT INTO imas_items (courseid,itemtype,typeid) VALUES ('$cid','LinkedText',$linkid)";
+		//mysql_query($query) or die("Query failed : $query " . mysql_error());
+		//$itemid= mysql_insert_id();
+		$stm = $DBH->prepare("INSERT INTO imas_items (courseid,itemtype,typeid) VALUES (?,'LinkedText',?)");
+		$stm->execute(array($cid,$linkid));
+		$itemid=$DBH->lastInsertId();
 		
 		$chpfolder['items'][] = $itemid;
 	}
@@ -180,9 +264,12 @@ foreach ($modlist as $chpname=>$mods) {
 	
 }
 
-$newitems = addslashes(serialize($items));
-$query = "UPDATE imas_courses SET itemorder='$newitems', blockcnt='$blockcnt' WHERE id='$cid'";
-mysql_query($query) or die("Query failed : $query " . mysql_error());
+//$newitems = addslashes(serialize($items));
+//$query = "UPDATE imas_courses SET itemorder='$newitems', blockcnt='$blockcnt' WHERE id='$cid'";
+//mysql_query($query) or die("Query failed : $query " . mysql_error());
+$newitems = serialize($items);
+$stm = $DBH->prepare("UPDATE imas_courses SET itemorder=?, blockcnt=? WHERE id=?");
+$stm->execute(array($newitems,$blockcnt,$cid));
 
 $n = 0;
 function makeQTI($pagetitle, $revq) {
